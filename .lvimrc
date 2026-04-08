@@ -1,0 +1,7 @@
+set expandtab
+set shiftwidth=2
+set list
+
+let &l:makeprg="clang -Wall -Wextra -Wpedantic -Og -g font_raster.c -o font_raster"
+
+nnoremap <F2> :make <CR>:!./font_raster<CR><CR>
