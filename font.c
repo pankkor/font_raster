@@ -86,19 +86,24 @@ b32 fwrite_pgm(const char * NONNULL filename, u8 *bitmap, i32 w, i32 h) {
 void* alloc_aligned(u64 size, u64 alignment, void** out_raw) {
   void *raw;
   void *aligned;
+  b32 is_pow2_aligned;
 
-  if (alignment < sizeof(void *) || (alignment & (alignment - 1)) != 0) {
-      return NULL;
+  aligned = 0;
+
+  is_pow2_aligned = alignment >= sizeof(void *) && (alignment & (alignment - 1)) == 0;
+  assert(is_pow2_aligned);
+
+  if (is_pow2_aligned)
+  {
+    raw = malloc(size + alignment - 1);
+    if (raw) {
+      aligned = (void *)(((u64)raw + alignment - 1) & ~(alignment - 1));
+    }
+    if (out_raw) {
+      *out_raw = raw;
+    }
   }
 
-  raw = malloc(size + alignment - 1);
-  if (!raw) {
-      return 0;
-  }
-  if (out_raw) {
-    *out_raw = raw;
-  }
-  aligned = (void *)(((u64)raw + alignment - 1) & ~(alignment - 1));
   return aligned;
 }
 
