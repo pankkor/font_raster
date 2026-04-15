@@ -2,6 +2,6 @@ set expandtab
 set shiftwidth=2
 set list
 
-let &l:makeprg="clang -Wall -Wextra -Wpedantic -Og -g font_raster.c -o font_raster"
+let &l:makeprg="clang -Wall -Wextra -Wpedantic -O3 -g font.c -o font"
 
-nnoremap <F2> :make <CR>:!./font_raster<CR><CR>
+nnoremap <F2> :make <CR>:!./font sdf 16 ./Andale\ Mono.ttf sdf.pgm 16 6<CR><CR>
