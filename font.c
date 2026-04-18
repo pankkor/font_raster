@@ -112,7 +112,7 @@ void* alloc_aligned(u64 size, u64 alignment, void** out_raw) {
 //  hires_bitmap  - high-resolution bitmap to calculate SDF from
 //  sdf_sz        - size of sdf_bitmap and hires_bitmap
 //  hires_spread  - spread already rescaled by hires_factor
-void calc_sdf(u8* NONNULL restrict sdf_bitmap, u8 * NONNULL restrict hires_bitmap, i32 sdf_sz[NONNULL restrict 2], i32 hires_spread) {
+void calc_sdf(u8 * NONNULL restrict sdf_bitmap, u8 * NONNULL restrict hires_bitmap, i32 sdf_sz[NONNULL restrict 2], i32 hires_spread) {
     u64 bitmap_from_off;  // offset of a point in SDF bitmap buffer to be calculated
     i32 from_p[2];        // calculate distance from point
     i32 to_p[2];          // calculate distance to   point
@@ -174,6 +174,39 @@ void calc_sdf(u8* NONNULL restrict sdf_bitmap, u8 * NONNULL restrict hires_bitma
     }
 }
 
+// Downsample using box filter. Every output filter is average values in factor * factor box
+// out_width  * factor = in_width
+// out_height * factor = in_height
+void downsample_box(u8 * NONNULL restrict out_bitmap, i32 out_stride, u8 * NONNULL restrict in_bitmap, i32 in_w, i32 in_h, i32 factor) {
+  i32 in_sz[2];
+  i32 out_sz[2];
+  i32 in[2];
+  i32 out[2];
+  i32 f[2];
+  u64 factor2;
+  u64 sum;
+
+  in_sz [0] = in_w;
+  in_sz [1] = in_h;
+  out_sz[0] = in_sz[0] / factor;
+  out_sz[1] = in_sz[1] / factor;
+  factor2   = factor * factor;
+
+  for   (out[1] = 0; out[1] < out_sz[1]; ++out[1]) {
+    for (out[0] = 0; out[0] < out_sz[0]; ++out[0]) {
+      sum = 0;
+      for   (f[1] = 0; f[1] < factor; ++f[1]) {
+        for (f[0] = 0; f[0] < factor; ++f[0]) {
+          in[0] = out[0] * factor + f[0];
+          in[1] = out[1] * factor + f[1];
+          sum += in_bitmap[in[1] * in_sz[0] + in[0]];
+        }
+      }
+      out_bitmap[out[1] * out_sz[0] + out[0]] = sum / factor2;
+    }
+  }
+}
+
 // Make single channel SDF font
 //  img_cell_h    - hight of glyph cell in resulting image. Cell will fit glyph with 2*spread.
 //  spread        - SDF is calculated in spread range. 6-8 is fine. Use bigger spread for effects (glow).
@@ -184,6 +217,7 @@ b32 main_sdf(const stbtt_fontinfo * NONNULL font, i32 img_cell_h, const char * N
   u8 * restrict hires_bitmap; // Helper high-resolution image buffer
   u8 * restrict sdf_bitmap;   // Helper high-resolution SDF image buffer
   u8 * restrict hires_dst;    // Rasterize glyph to this point in high-resolution buffer
+  u8 * restrict img_dst;      // Rasterize glyph to this point in final bitmap buffer
 
   u64 img_usz[2];             // Unsigned version for checks to avoid integer overflow UB optimizations
   u64 hires_usz[2];           // Unsigned version for checks to avoid integer overflow UB optimizations
@@ -194,6 +228,8 @@ b32 main_sdf(const stbtt_fontinfo * NONNULL font, i32 img_cell_h, const char * N
   i32 hires_sz[2];            // Size of high-resolution glyph image
   i32 hires_gly_sz[2];        // Size of glyph in high-resolution image considering spread
   i32 sdf_sz[2];              // Size of high-resolution SDF image
+  i32 pos_grid[2];            // Position in grid {column, row}
+  i32 img_p[2];               // Position in buffer
 
   u64 img_bitmap_bytes;       // Size in bytes of resulting bitmap.
   u64 hires_bitmap_bytes;     // Size in bytes of helper high-resolution bitmap.
@@ -280,6 +316,8 @@ b32 main_sdf(const stbtt_fontinfo * NONNULL font, i32 img_cell_h, const char * N
   hires_margin_y        = (hires_sz[1] - hires_font_height) / 2;
   hires_baseline_bitmap = hires_margin_y    + hires_font_ascent;
 
+  // TODO
+  u8 *test;
   // for (codepoint = 0; codepoint < 256; ++codepoint) {
   codepoint = 0;
   {
@@ -300,6 +338,27 @@ b32 main_sdf(const stbtt_fontinfo * NONNULL font, i32 img_cell_h, const char * N
     stbtt_MakeCodepointBitmap(font, hires_dst, hires_bb_sz[0], hires_bb_sz[1], hires_sz[0], hires_font_scale, hires_font_scale, codepoint);
 
     calc_sdf(sdf_bitmap, hires_bitmap, sdf_sz, hires_spread);
+
+    test = malloc(sdf_sz[0] / hires_factor * sdf_sz[1] / hires_factor);
+    downsample_box(test, 0, sdf_bitmap, sdf_sz[0], sdf_sz[1], hires_factor);
+
+    /*
+    // TODO:
+    pos_grid[0]   = codepoint     % img_grid_sz[0];
+    pos_grid[1]   = codepoint     / img_grid_sz[0];
+
+    img_p[0]      = pos_grid[0]   * img_cell_sz[0] + hires_p[0] / hires_factor;
+    img_p[1]      = pos_grid[1]   * img_cell_sz[1] + hires_p[1] / hires_factor;
+
+    img_dst       = img_bitmap + img_p[1] * img_sz[0] + img_p[0];
+    // TODO stride is not used
+    downsample_box(img_dst, img_sz[0], sdf_bitmap, sdf_sz[0], sdf_sz[1], hires_factor);
+    */
+  }
+
+  // TODO: test
+  if (fwrite_pgm("test.pgm", test, sdf_sz[0] / hires_factor, sdf_sz[1] / hires_factor)) {
+      printf("Saved Test bitmap (%dx%d) to '%s'.\n",  sdf_sz[0] / hires_factor, sdf_sz[1] / hires_factor, "test.pgm");
   }
 
   // TODO: debug
@@ -514,7 +573,7 @@ int main(int argc, char **argv) {
   exit_code = 0;
 
 main_cleanup:
-  // "THNF!" stands for "TRU3 H4KK3RS N3V3R FR33!"
+  // THNF! - TRU3 H4KK3RS N3V3R FR33!
 
   return exit_code;
 }
